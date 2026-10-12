@@ -43,8 +43,12 @@ echo "==> Whisper model (otherwise it downloads on first run)"
 uv run python -c "from faster_whisper import WhisperModel; WhisperModel('small.en')"
 
 echo "==> Ollama"
-command -v ollama >/dev/null || curl -fsSL https://ollama.com/install.sh | sh
-MODEL=$(uv run python -c "from Config.Configurations import MODEL; print(MODEL)")
-ollama pull "$MODEL"
+if command -v ollama >/dev/null; then
+  MODEL=$(uv run python -c "from Config.Configurations import MODEL; print(MODEL)")
+  ollama pull "$MODEL"
+else
+  echo "Ollama not found. Please install ollama yourself and pull \"$MODEL\"."
+  exit 1
+fi
 
 echo "Done."

@@ -3,7 +3,7 @@ import queue
 import threading
 import multiprocessing
 import re
-
+import time
 import torch
 import sounddevice as sd
 from ollama import chat, Message
@@ -17,6 +17,8 @@ from Tools.UserTools import *
 stop_event = threading.Event()   # set = "stop talking now"
 busy_event = threading.Event()   # set = "a response is in progress"
 THINKING_BOOL = True
+
+status_alert = None
 
 # ---------- tools: one dict, the list is built from it ----------
 TOOLS = {
@@ -161,19 +163,48 @@ def respond(text: str):
 
 def status(message: str):
     sys.stdout.write(f"\r\033[K{message}\n")
-    speak(message)
     sys.stdout.flush()
 
 def main():
+    # start up
+    print("-----------------------------------------\n")
+    print(f"name: {ASSISTANT_NAME}, model: {MODEL}, ctx: {CONTEXT_SIZE}")
+    print("-----------------------------------------\n")
+    speak("Starting Systems")
+
+    # stattus alert
+    global status_alert 
 
     def interrupt():
         if busy_event.is_set():                   # she's mid-response
             print("\n[interrupting current response...]")
             stop_event.set()
+            time.sleep(1)
 
+    # 1. Update the callback names inside main()
+    def on_vad_detect_start():
+        global status_alert
+        sys.stdout.write("\r\033[K[VAD: Waiting for speech...]\n")
+        sys.stdout.flush()
+        
+        status_alert = "Waiting"  # Sets flag cleanly
+
+    # callbacks
     def on_recording_start():
-        status("listening...")
+        global status_alert
+        sys.stdout.write("\r\033[Klistening...\n")
+        sys.stdout.flush()
         interrupt()
+        tts_queue.put("listening")
+        status_alert = "listening"  # Sets flag instead of speaking
+
+    def on_recording_stop():
+        global status_alert
+        sys.stdout.write("\r\033[Ktranscribing...\n")
+        sys.stdout.flush()
+        tts_queue.put("transcribing")
+        status_alert = "transcribing"  # Sets flag instead of speaking
+        
 
     recorder = AudioToTextRecorder(
         transcription_engine="faster_whisper",
@@ -182,32 +213,51 @@ def main():
         spinner=False,
         compute_type="float16" if torch.cuda.is_available() else "float32",
         allowed_latency_limit=150,
-        on_recording_start=on_recording_start,    # was a lambda that never interrupted
-        on_recording_stop=lambda: status("transcribing..."),
-        on_wakeword_detected=interrupt,           # fires as soon as the wake word is heard
         post_speech_silence_duration=1.5,
-
+        on_vad_detect_start=on_vad_detect_start,
+        on_recording_start=on_recording_start,    # was a lambda that never interrupted
+        on_recording_stop=on_recording_stop,
+        # on_wakeword_detected=interrupt,           # fires as soon as the wake word is heard
+        
         # wakeword_backend="oww",
         # wake_words="computer",
         # wake_words_sensitivity=0.6,
         # wake_word_buffer_duration=0.1,
-        # wake_word_timeout=5.0,
+        # wake_word_timeout=10.0,
     )
-
-    print("-----------------------------------------\n")
-    print(f"name: {ASSISTANT_NAME}, model: {MODEL}, ctx: {CONTEXT_SIZE}")
-    print("-----------------------------------------\n")
-    speak("Starting")
+    
     response_thread = None
 
     try:
         while True:
+            #  # statusu alerts
+            # if status_alert:
+            #     alert_text = status_alert
+            #     status_alert = None               # Clear it instantly
+            #     speak(alert_text) 
+            #     time.sleep(1)                # Speak safely here
+            # # =========================================================
+            
+            # print("listening")
+            # tts_queue.put("Listening")  
+            tts_queue.put("ready")
+            
             usertext = recorder.text().strip()    # the mic stays live while she talks
             if not usertext:
                 continue
 
+            # --- This is your text stop/cancel check ---
+            text_clean = usertext.strip().lower()
+            if any(phrase in text_clean for phrase in ["stop listening", "cancel", "nevermind"]):
+                print(f"\n🛑 Action canceled by user. Returning to standby...")
+                continue  # Skips processing, goes right back to waiting for the wake word
+
+            # print("transcribing")
+            # tts_queue.put("transcribing")
+
             print(f"\nuser➜ {usertext}")
-            status("\tGenerating response...\n")
+            print("\tGenerating response...\n")
+            tts_queue.put("Generating response")
 
             # make sure the old response has fully stopped before starting a new one
             if response_thread and response_thread.is_alive():

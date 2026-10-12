@@ -1,0 +1,4 @@
+{
+  "agent_name": "https://pypi.org/project/realtimestt/ the realtime stt requires it to be in main because \"Use the if __name__ == \"__main__\": guard when running scripts, especially on Windows, because RealtimeSTT uses multiprocessing for model work.\" i'm wondering how i can structure the project to be modular",
+  "auto_start_relay": false
+}

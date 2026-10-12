@@ -161,6 +161,7 @@ def respond(text: str):
 
 def status(message: str):
     sys.stdout.write(f"\r\033[K{message}\n")
+    speak(message)
     sys.stdout.flush()
 
 def main():
@@ -186,17 +187,17 @@ def main():
         on_wakeword_detected=interrupt,           # fires as soon as the wake word is heard
         post_speech_silence_duration=1.5,
 
-        wakeword_backend="pvporcupine",
-        wake_words="computer",
-        wake_words_sensitivity=0.6,
-        wake_word_buffer_duration=0.1,
-        wake_word_timeout=5.0,
+        # wakeword_backend="oww",
+        # wake_words="computer",
+        # wake_words_sensitivity=0.6,
+        # wake_word_buffer_duration=0.1,
+        # wake_word_timeout=5.0,
     )
 
     print("-----------------------------------------\n")
     print(f"name: {ASSISTANT_NAME}, model: {MODEL}, ctx: {CONTEXT_SIZE}")
     print("-----------------------------------------\n")
-
+    speak("Starting")
     response_thread = None
 
     try:
@@ -205,7 +206,7 @@ def main():
             if not usertext:
                 continue
 
-            status(f"\nuser➜ {usertext}")
+            print(f"\nuser➜ {usertext}")
             status("\tGenerating response...\n")
 
             # make sure the old response has fully stopped before starting a new one

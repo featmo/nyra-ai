@@ -9,6 +9,7 @@ import sounddevice as sd
 from ollama import chat, Message
 from piper import PiperVoice
 from RealtimeSTT import AudioToTextRecorder
+from pathlib import Path
 
 from Config.Configurations import ASSISTANT_NAME, MODEL, CONTEXT_SIZE, SYSTEM_PROMPT
 from Tools.UserTools import *
@@ -29,6 +30,9 @@ TOOLS = {
     "list_directory": list_directory,
     "get_current_directory": get_current_directory,
     "get_file_contents": get_file_contents,
+    "get_system_specs": get_system_specs,
+    "list_processes": list_processes,
+    "screen_shot": screen_shot
 }
 
 messages = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -92,7 +96,23 @@ def run_tool(call) -> str:
 
 # ---------- the model ----------
 def inference(text: str):
-    messages.append({"role": "user", "content": text})
+    # Target path setup
+    target_path = Path("C:/_Dev/ai/nyra-ai/img.png").resolve()
+    
+    # Check if the file actually exists on the disk
+    if target_path.exists():
+        messages.append({
+            "role": "user", 
+            "content": text, 
+            "images": [str(target_path)]  # Fix: Must be a list of strings
+        })
+    else:
+        # Fallback if file isn't found or image_path logic bypassed
+        messages.append({
+            "role": "user", 
+            "content": text
+        })
+
     label_printed = False
 
     while True:                                   # one trip around = one round with the model
@@ -108,7 +128,12 @@ def inference(text: str):
 
         reply, tts_batch, tool_calls = "", "", []  # reset every round
 
+        first_chunk = next(response_stream)
+        if first_chunk.message.thinking:
+            print("Thinking")
+
         for chunk in response_stream:
+
             if stop_event.is_set():               # you started talking: stop reading tokens
                 break
             msg = chunk.message
@@ -148,6 +173,13 @@ def inference(text: str):
                 "content": run_tool(call),
                 "tool_name": call.function.name,
             })
+
+        # Look through recent history to find the user message that brought the image in
+        for msg in reversed(messages):
+            if isinstance(msg, dict) and msg.get("role") == "user" and "images" in msg:
+                del msg["images"]
+                break  # Remove it once and stop searching
+
         # loop again: the model sees the results and writes the answer
 
     print()
@@ -172,7 +204,7 @@ def main():
     print("-----------------------------------------\n")
     speak("Starting Systems")
 
-    # stattus alert
+    # status alert
     global status_alert 
 
     def interrupt():
@@ -186,7 +218,6 @@ def main():
         global status_alert
         sys.stdout.write("\r\033[K[VAD: Waiting for speech...]\n")
         sys.stdout.flush()
-        
         status_alert = "Waiting"  # Sets flag cleanly
 
     # callbacks
@@ -230,18 +261,7 @@ def main():
 
     try:
         while True:
-            #  # statusu alerts
-            # if status_alert:
-            #     alert_text = status_alert
-            #     status_alert = None               # Clear it instantly
-            #     speak(alert_text) 
-            #     time.sleep(1)                # Speak safely here
-            # # =========================================================
-            
-            # print("listening")
-            # tts_queue.put("Listening")  
-            tts_queue.put("ready")
-            
+             
             usertext = recorder.text().strip()    # the mic stays live while she talks
             if not usertext:
                 continue
@@ -251,6 +271,10 @@ def main():
             if any(phrase in text_clean for phrase in ["stop listening", "cancel", "nevermind"]):
                 print(f"\n🛑 Action canceled by user. Returning to standby...")
                 continue  # Skips processing, goes right back to waiting for the wake word
+            img_path = ""
+            if any(phrase in text_clean for phrase in ["take screenshot", "take screen shot"]):
+                img_path = screen_shot()
+                print("Screenshot taken!")
 
             # print("transcribing")
             # tts_queue.put("transcribing")
@@ -265,14 +289,23 @@ def main():
                 response_thread.join()
 
             busy_event.set()
-            response_thread = threading.Thread(target=respond, args=(usertext,), daemon=True)
+            response_thread = threading.Thread(target=lambda: respond(usertext), daemon=True)
             response_thread.start()
+
+    
+            os.remove("img.png")
+            
+        
 
     except KeyboardInterrupt:
         print("\nShutting down...")
     finally:
         stop_event.set()
         recorder.shutdown()
+        try:
+             os.remove("img.png")
+        except:
+            print("file not availabe")
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()

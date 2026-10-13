@@ -7,11 +7,13 @@ requires-python = ">=3.12"
 dependencies = [
     "ddgs>=9.16.0",
     "ollama>=0.6.3",
-    "openwakeword",
+    "openwakeword==0.3.0",
     "piper-tts>=1.8.0",
     "psutil>=7.2.2",
     "realtimestt[faster-whisper,porcupine]>=1.1.2",
     "sounddevice>=0.5.6",
+    "gpuinfo",
+    "pillow>=12.3.0",
 ]
 [tool.uv]
 offline = false
